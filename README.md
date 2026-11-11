@@ -1,50 +1,56 @@
-# NubeDB
+# NubeDB — aplicación privada (v1)
 
-Starter deployable: React + Vite frontend, Fastify API, PostgreSQL metadata schema. This is a development starter, not a production Supabase clone. Authentication and tenant authorization must be implemented before real users or sensitive data are allowed.
+NubeDB es un panel web para una base PostgreSQL existente: React + Vite, Fastify y PostgreSQL. Esta entrega incluye autenticación por contraseña, sesión firmada de 12 horas, explorador de tablas y consola SQL estrictamente de solo lectura.
 
-## Requirements
+## Funciones incluidas
+- Inicio de sesión privado; token firmado en servidor y guardado en `sessionStorage`.
+- Estado de salud de la API y conexión PostgreSQL.
+- Listado de tablas de usuario y visualización de columnas/primeras 50 filas.
+- Consola SQL limitada a una única consulta `SELECT`/`WITH`, transacción `READ ONLY`, timeout de 5 segundos y respuesta máxima de 200 filas.
+- Identificadores SQL de tablas escapados y valores de paginación parametrizados.
+- CORS por lista de orígenes permitidos y limitación básica de intentos de inicio de sesión.
 
+**Límites deliberados de seguridad:** esta versión no crea, altera ni elimina tablas/filas; no admite SQL de escritura ni múltiples sentencias. No es un clon de Supabase ni un servicio multiusuario. La autenticación es una contraseña compartida para un único propietario. Para producción con datos sensibles, añade MFA, gestión de usuarios/roles, rate limiting distribuido, backups y revisión de seguridad.
+
+## Requisitos
 - Node.js 20+
-- A PostgreSQL database (Neon is one hosted option)
-- GitHub account for deploys
+- PostgreSQL (Neon es una opción)
+- Variables de entorno configuradas
 
-## Run locally
+## Desarrollo local
+1. Copia `api/.env.example` como `api/.env` y completa los valores.
+2. En una terminal: `cd api && npm install && npm run dev`
+3. En otra: `cd web && npm install && npm run dev`
+4. Abre la dirección local que indique Vite (normalmente `http://localhost:5173`).
 
-Copy `api/.env.example` to `api/.env` and set `DATABASE_URL`.
+La API usa el puerto 3001 por defecto. En `web/.env` define `VITE_API_URL=http://localhost:3001` si necesitas cambiarlo.
 
-In one terminal:
+## Variables de API
+- `DATABASE_URL`: cadena PostgreSQL privada. Nunca ponerla en el frontend.
+- `NUBEDB_PASSWORD`: contraseña larga y única.
+- `SESSION_SECRET`: secreto aleatorio de al menos 64 caracteres hexadecimales.
+- `FRONTEND_ORIGIN`: origen exacto del frontend; varios orígenes separados por coma.
+- `NODE_ENV=production` en Render.
 
-```
-cd api
-npm install
-npm run dev
-```
+Genera el secreto con `node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"`. No subas `.env` a GitHub ni compartas secretos en chats.
 
-In another terminal:
+## Base de datos y despliegue
+`db/001_init.sql` crea las tablas de metadatos del workspace, proyecto y auditoría incluidas en este paquete; el explorador también muestra otras tablas de usuario que ya existan en la base configurada. Ejecuta el SQL solo si quieres esas tablas de metadatos.
 
-```
-cd web
-npm install
-npm run dev
-```
+### Render (API)
+- Root directory: `api`
+- Build: `npm install`
+- Start: `npm start`
+- Health check: `/health`
+- Configura las variables anteriores en el panel de Render.
 
-Open the URL printed by Vite (usually http://localhost:5173).
+### Vercel (frontend)
+- Root directory: `web`
+- Build: `npm run build`
+- Output: `dist`
+- Variable: `VITE_API_URL` con la URL pública HTTPS de Render.
 
-The frontend uses `VITE_API_URL` and defaults to http://localhost:3001. The API health endpoint is `/health`.
+Después de desplegar, configura `FRONTEND_ORIGIN` en Render con el dominio exacto de Vercel y vuelve a desplegar la API. Verifica `/health` y prueba el login.
 
-## Database
-
-Apply `db/001_init.sql` to your PostgreSQL database using the provider's SQL editor or psql. For a first deploy, use a separate development database. Keep `DATABASE_URL` only in the backend environment variables, never in `web/.env`.
-
-## Deploy
-
-1. Push this folder to a GitHub repository.
-2. Deploy `web/` as a Vercel Vite project. Build command: `npm run build`; output directory: `dist`.
-3. Deploy `api/` as a Render Node web service. Build command: `npm install`; start command: `npm start`.
-4. Set API environment variables on Render: `DATABASE_URL`, `FRONTEND_ORIGIN` (your Vercel URL), `NODE_ENV=production`.
-5. Set `VITE_API_URL` in Vercel to the Render API URL, then redeploy the frontend.
-6. Apply the SQL migration before testing the API.
-
-## Security before production
-
-This starter intentionally does not expose SQL execution or user-created table management. Add authentication, server-side authorization, rate limiting, request validation, audit logging, backups, and per-project isolation before those features. Do not add a public endpoint that accepts arbitrary SQL.
+## Pruebas
+Desde `api`: `npm start`. Desde `web`: `npm run build`. Comprueba el inicio de sesión, el listado de tablas y una consulta SELECT. Usa primero una base de desarrollo o una copia de respaldo.
