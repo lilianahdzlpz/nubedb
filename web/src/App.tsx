@@ -3,6 +3,7 @@ import {
   Activity, Blocks, Check, ChevronDown, Code2, Database, FolderKanban,
   LayoutDashboard, Plus, Settings, ShieldCheck, Table2, Sparkles, ArrowUpRight
 } from 'lucide-react';
+import { SpeedInsights } from '@vercel/speed-insights/react';
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 type Health = { status: string; database?: boolean };
@@ -96,5 +97,6 @@ export default function App() {
         <footer><span>NubeDB · MVP 0.1</span><span>React + Fastify + PostgreSQL</span></footer>
       </div>
     </main>
+    <SpeedInsights />
   </div>;
 }
