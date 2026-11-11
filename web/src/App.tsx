@@ -80,6 +80,72 @@ function ActivityChart() {
   </div>;
 }
 
+
+function DataBrowser({ token }: { token: string }) {
+  const [tables, setTables] = useState<any[]>([]);
+  const [selected, setSelected] = useState<{schema:string;name:string}|null>(null);
+  const [rows, setRows] = useState<any[]>([]);
+  const [columns, setColumns] = useState<any[]>([]);
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+  const headers = { Authorization: `Bearer ${token}` };
+  useEffect(() => {
+    fetch(`${API}/api/tables`, { headers }).then(r => r.json()).then(d => {
+      if (!Array.isArray(d.tables)) throw new Error(d.error || 'No se pudieron cargar las tablas');
+      setTables(d.tables);
+    }).catch(e => setError(e.message));
+  }, [token]);
+  async function openTable(t: {schema:string;name:string}) {
+    setSelected(t); setLoading(true); setError('');
+    try {
+      const [metaRes, rowRes] = await Promise.all([
+        fetch(`${API}/api/tables/${encodeURIComponent(t.schema)}/${encodeURIComponent(t.name)}`, {headers}),
+        fetch(`${API}/api/tables/${encodeURIComponent(t.schema)}/${encodeURIComponent(t.name)}/rows?limit=50`, {headers})
+      ]);
+      const meta = await metaRes.json(), data = await rowRes.json();
+      if (!metaRes.ok || !rowRes.ok) throw new Error(meta.error || data.error || 'Error al leer la tabla');
+      setColumns(meta.columns || []); setRows(data.rows || []);
+    } catch(e:any) { setError(e.message); } finally { setLoading(false); }
+  }
+  return <><div className="kicker">DATA MANAGEMENT</div><h1>Table Editor</h1>
+    <p className="muted">Explora tus tablas PostgreSQL en modo lectura.</p>
+    {error && <div className="notice" role="alert">{error}</div>}
+    <div className="browser-layout"><section className="panel table-list"><div className="panel-title">Tablas ({tables.length})</div>
+      {tables.map(t=><button key={`${t.schema}.${t.name}`} className={`table-choice ${selected?.schema===t.schema&&selected?.name===t.name?'chosen':''}`} onClick={()=>openTable(t)}>
+        <Table2 size={15}/><span><b>{t.name}</b><small>{t.schema} · aprox. {t.estimated_rows} filas</small></span>
+      </button>)}
+      {!tables.length && <div className="empty">No hay tablas disponibles.</div>}
+    </section><section className="panel rows-panel"><div className="panel-title">{selected ? `${selected.schema}.${selected.name}` : 'Selecciona una tabla'} <span className="pill">LECTURA</span></div>
+      {loading ? <div className="empty">Cargando datos…</div> : selected ? <>
+        <div className="column-meta">{columns.map(c=><span key={c.column_name}>{c.column_name} <small>{c.data_type}</small></span>)}</div>
+        <div className="data-scroll"><table className="data-table"><thead><tr>{columns.map(c=><th key={c.column_name}>{c.column_name}</th>)}</tr></thead>
+          <tbody>{rows.map((r,i)=><tr key={i}>{columns.map(c=><td key={c.column_name}>{r[c.column_name]===null?'NULL':typeof r[c.column_name]==='object'?JSON.stringify(r[c.column_name]):String(r[c.column_name])}</td>)}</tr>)}</tbody>
+        </table></div>{!rows.length && <div className="empty">La tabla no contiene filas.</div>}
+      </> : <div className="empty"><Blocks size={30}/><b>Tus tablas aparecerán aquí</b><p>Selecciona una tabla para consultar sus columnas y primeras 50 filas.</p></div>}
+    </section></div>
+  </>;
+}
+
+function ReadOnlySql({token}:{token:string}) {
+  const [sql,setSql]=useState('SELECT *\nFROM public.projects\nLIMIT 50;');
+  const [result,setResult]=useState<any>(null);
+  const [error,setError]=useState('');
+  const [busy,setBusy]=useState(false);
+  async function run() {
+    setBusy(true); setError(''); setResult(null);
+    try {
+      const r=await fetch(`${API}/api/query`,{method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${token}`},body:JSON.stringify({sql})});
+      const d=await r.json(); if(!r.ok) throw new Error(d.message || d.error || 'Consulta rechazada'); setResult(d);
+    } catch(e:any){setError(e.message)} finally{setBusy(false)}
+  }
+  return <><div className="kicker">QUERY WORKSPACE</div><h1>SQL Editor</h1><p className="muted">Ejecuta consultas SELECT de solo lectura.</p>
+    <section className="panel editor"><textarea aria-label="Consulta SQL" spellCheck={false} value={sql} onChange={e=>setSql(e.target.value)}/>
+      <div className="editor-actions"><span className="pill">SOLO SELECT · MÁX. 5 SEGUNDOS</span><button className="primary" onClick={run} disabled={busy}>{busy?'Ejecutando…':'Ejecutar consulta'}</button></div>
+      {error && <div className="notice" role="alert">{error}</div>}
+      {result && <><p className="muted">{result.rowCount} filas devueltas (máximo 200).</p><div className="data-scroll"><table className="data-table"><thead><tr>{result.columns.map((c:string)=><th key={c}>{c}</th>)}</tr></thead><tbody>{result.rows.map((row:any,i:number)=><tr key={i}>{result.columns.map((c:string)=><td key={c}>{row[c]===null?'NULL':typeof row[c]==='object'?JSON.stringify(row[c]):String(row[c])}</td>)}</tr>)}</tbody></table></div></>}
+    </section></>;
+}
+
 export default function App() {
   const [page, setPage] = useState('Overview');
   const [health, setHealth] = useState<Health>({ status: 'checking' });
@@ -184,14 +250,8 @@ export default function App() {
           </section>
           <div className="notice"><ShieldCheck size={17}/><span>La edición de tablas y ejecución SQL se habilitarán después de implementar permisos y validaciones del servidor.</span></div>
         </>}
-        {page === 'Table Editor' && <><div className="kicker">DATA MANAGEMENT</div><h1>Table Editor</h1>
-          <p className="muted">Explora las tablas de tu proyecto.</p><section className="panel"><div className="panel-title"><span><Database size={16}/> public / tables</span><span className="pill">SIGUIENTE ETAPA</span></div>
-            <div className="empty"><Blocks size={30}/><b>Editor de tablas en preparación</b><p>La siguiente actualización conectará el catálogo real de PostgreSQL y permitirá administrar tus tablas de forma segura.</p></div>
-          </section></>}
-        {page === 'SQL Editor' && <><div className="kicker">QUERY WORKSPACE</div><h1>SQL Editor</h1>
-          <p className="muted">Editor de consultas.</p><section className="panel"><div className="panel-title"><span>query.sql</span><span className="pill">PROTECCIÓN ACTIVA</span></div>
-            <div className="empty"><Code2 size={30}/><b>Ejecución SQL desactivada</b><p>Primero se implementarán permisos, límites de tiempo y protección de consultas.</p></div>
-          </section></>}
+        {page === 'Table Editor' && <DataBrowser token={token}/>}
+        {page === 'SQL Editor' && <ReadOnlySql token={token}/>}
         {page === 'Settings' && <><div className="kicker">CONFIGURATION</div><h1>Project settings</h1><p className="muted">Configuración del proyecto.</p>
           <section className="panel settings"><label>Project name<input value={projectName} onChange={event => setProjectName(event.target.value)} maxLength={80}/></label>
             <label>API URL<input value={API} readOnly/></label><p className="muted">La sesión se cierra al salir o después de 12 horas.</p>
